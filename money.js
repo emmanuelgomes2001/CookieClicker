@@ -1,12 +1,13 @@
 'use strict';
 
 class MoneyGame {
-  constructor({ counterEl, playfieldEl, makeBtn, upgradeBtn, farmBtn, cost = 10 }) {
+  constructor( counterEl, playfieldEl, makeBtn, upgradeBtn, farmBtn, factoriesBtn, cost = 10) {
     this.counterEl = counterEl;
     this.playfieldEl = playfieldEl;
     this.makeBtn = makeBtn;
     this.upgradeBtn = upgradeBtn;
     this.farmBtn = farmBtn;
+    this.factoriesBtn = factoriesBtn;
 
     this.money = 0;
     this.power = 1;
@@ -20,15 +21,17 @@ class MoneyGame {
     this.margin = 8;
 
     // Farm system
-    this.farms = [];
-    this.baseFarmCost = 50;
+    this.farms = new Farm(50, 1);
+    this.factories = new Farm(100, 10);
     this.autoTimer = null;
     this.tickRate = 1000;
 
     // Event listeners
     this.makeBtn.addEventListener('click', () => this.click());
     this.upgradeBtn.addEventListener('click', () => this.upgrade());
-    this.farmBtn.addEventListener('click', () => this.buyFarm());
+    this.farmBtn.addEventListener('click', () => this.farms.buy(this));
+    this.factoriesBtn.addEventListener('click', () => this.factories.buy(this));
+    
     window.addEventListener('resize', () => this.layoutBills());
 
     this.updateUI();
@@ -81,6 +84,18 @@ class MoneyGame {
     this.layoutBills();
   }
 
+  addMoney(amount) {
+    for (let i = 0; i < amount; i++) {
+      this.spawnBill()
+    };
+  }
+
+  removeMoney(amount) {
+    for (let i = 0; i < amount; i++) {
+      this.removeLastBill()
+    };
+  }
+
   layoutBills() {
     const W = window.innerWidth;
     const H = window.innerHeight;
@@ -97,8 +112,8 @@ class MoneyGame {
 
   updateUI() {
     this.money = this.bills.length;
-    const farmCount = this.farms.length;
-    const nextFarmCost = this.getNextFarmCost();
+    const farmCount = this.farms.count;
+    const nextFarmCost = this.farms.cost;
 
     this.counterEl.textContent = `Money: ${this.money} | Farms: ${farmCount}`;
     this.upgradeBtn.disabled = this.money < this.COST;
@@ -107,81 +122,67 @@ class MoneyGame {
       this.farmBtn.disabled = this.money < nextFarmCost;
       this.farmBtn.textContent = `Buy Farm (${nextFarmCost})`;
     }
+
+    if (this.factoriesBtn) {
+      this.factoriesBtn.disabled = this.money < this.factories.cost;
+      this.factoriesBtn.textContent = `Buy Factory (${this.factories.cost})`;
+    }
   }
-
-  // Delegate farm cost calculation to Farm class
-  getNextFarmCost() {
-    return Farm.getNextCost(this.farms.length, this.baseFarmCost);
-  }
-
-  // Delegate buying to Farm and update UI on success
-  buyFarm() {
-    const bought = Farm.buy(this);
-    if (bought) this.updateUI();
-  }
-
-
-
   startFarms() {
     if (this.autoTimer) clearInterval(this.autoTimer);
     this.autoTimer = setInterval(() => {
-      this.farms.forEach(f => f.produce(this));
+      this.farms.produce(this);
+      this.factories.produce(this);
       this.updateUI();
     }, this.tickRate);
   }
 }
 
 class Farm {
-  constructor({ cost = 50, rate = 1 }) {
+  constructor(cost, rate) {
     this.cost = cost;
     this.rate = rate;
-    
+    this.count = 0;
   }
 
   produce(game) {
-    for (let i = 0; i < this.rate; i++) {
-      game.spawnBill();
-    }
+    game.addMoney(this.count * this.rate);
   }
 
+  increaseCost() {
+    const growth = 1.5;
+    this.cost = Math.floor(this.cost * growth);
+  };
 
+  
+  buy(game) {
+    // Ensure player has enough money (bills length is money)
+    if (game.money < this.cost) return false;
+
+    // Pay: remove cost bills
+    game.removeMoney(this.cost);
+    this.count += 1;
+    this.increaseCost();
+    game.updateUI();
+    // Start auto production timer if not already running
+    if (!game.autoTimer) game.startFarms();
+
+    return true;
+  };
 }
 
-// Static helpers on Farm for cost calculation and buying
-// These are used by MoneyGame so the farm logic is encapsulated here.
-Farm.getNextCost = function(farmCount, baseCost) {
-  // Growth factor for farm cost per farm owned. Keep it modest so costs rise.
-  const growth = 1.5;
-  return Math.floor(baseCost * Math.pow(growth, farmCount));
-};
 
-Farm.buy = function(game) {
-  const cost = Farm.getNextCost(game.farms.length, game.baseFarmCost);
-
-  // Ensure player has enough money (bills length is money)
-  if (game.money < cost) return false;
-
-  // Pay: remove `cost` bills
-  for (let i = 0; i < cost; i++) game.removeLastBill();
-
-  // Create a new farm (rate can be adjusted later)
-  const farm = new Farm({ cost, rate: 1 });
-  game.farms.push(farm);
-
-  // Start auto production timer if not already running
-  if (!game.autoTimer) game.startFarms();
-
-  return true;
-};
 
 // --- Initialize Game ---
-const game = new MoneyGame({
-  counterEl: document.getElementById('cookie_counter'),
-  playfieldEl: document.getElementById('playfield'),
-  makeBtn: document.getElementById('cookie_btn'),
-  upgradeBtn: document.getElementById('upgrade_btn'),
-  farmBtn: document.getElementById('farm_btn'),
-  cost: 10
-});
+const game = new MoneyGame(
+  document.getElementById('cookie_counter'),
+  document.getElementById('playfield'),
+  document.getElementById('cookie_btn'),
+  document.getElementById('upgrade_btn'),
+  document.getElementById('farm_btn'),
+  document.getElementById('factories_btn'),
+  10
+);
 
 window.game = game;
+
